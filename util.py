@@ -69,11 +69,10 @@ def write_results(prediction, confidence, num_classes, nms_conf = 0.4):
     box_corner[:,:,1] = (prediction[:,:,1] - prediction[:,:,3]/2)
     box_corner[:,:,2] = (prediction[:,:,0] + prediction[:,:,2]/2)
     box_corner[:,:,3] = (prediction[:,:,1] + prediction[:,:,3]/2)
-    prediction[:,:,4] = box_corner[:,:,4]
-
+    prediction[:,:,:4] = box_corner[:,:,:4]
+    
     batch_size = prediction.size(0)
-    write = False
-    output = None
+    output = []
 
     for ind in range(batch_size):
         image_pred = prediction[ind] # one image
@@ -83,28 +82,28 @@ def write_results(prediction, confidence, num_classes, nms_conf = 0.4):
         max_conf_score = max_conf_score.float().unsqueeze(1)
         seq = (image_pred[:, :5], max_conf, max_conf_score) # x,y,x,y, obj, class_conf, class number
         image_pred = torch.cat(seq,1)
-        non_zero_ind = (torch.nonzero(image_pred[:,4]))
+        non_zero_ind = torch.nonzero(image_pred[:,4]).squeeze()
         try:
-            image_pred_ = image_pred[non_zero_ind.squeeze(),:].view(-1,7)
+            image_pred_nonzero = image_pred[non_zero_ind]
         except:
-            continue
+            pass
 
-        if image_pred_.shape[0] == 0:
-            continue
+        if image_pred_nonzero.shape[0] == 0:
+            pass
 
-        img_classes = torch.unique(image_pred_[:-1]) # -1 index holds the class index
+        img_classes = torch.unique(image_pred_nonzero[:,-1]) # -1 index holds the class index, all the unique classes
+        write = False
+        bboxes_one_image = [] # to store the bbox 
 
         for cls in img_classes:
-            cls_mask = image_pred_*(image_pred_[:, -1] == cls).float().unsqueeze(1)
-            class_mask_ind = torch.nonzero(cls_mask[:,-2]).squeeze()
-            image_pred_class = image_pred_[class_mask_ind].view(-1,7)
+            image_pred_class = image_pred_nonzero[image_pred_nonzero[:,-1] == cls]
 
             #sort the class
             conf_sort_index = torch.sort(image_pred_class[:,4], descending = True)[1]
             image_pred_class = image_pred_class[conf_sort_index]
-            idx = image_pred_class.size(0)
+            num = len(image_pred_class)
 
-            for i in range(idx):
+            for i in range(num):
                 try:
                     ious = bbox_iou(image_pred_class[i].unsqueeze(0),image_pred_class[i+1:])
                 except ValueError:
@@ -119,18 +118,16 @@ def write_results(prediction, confidence, num_classes, nms_conf = 0.4):
 
                 # change the image_pred_class
                 non_zero_ind = torch.nonzero(image_pred_class[:, 4]).squeeze()
-                image_pred_class = image_pred_class[non_zero_ind].view(-1,7)
-
-            batch_ind = image_pred_class.new(image_pred_class.size(0),1).fill_(ind)
-
-            seq = (batch_ind, image_pred_class)
-
-            if not write:
-                output = torch.cat(seq,1)
+                image_pred_class = image_pred_class[non_zero_ind]
+             
+        
+            if not write: # haven't initialize the bboxes_one_image
+                bboxes_one_image = image_pred_class.numpy()
                 write = True
             else:
-                out = torch.cat(seq,1)
-                output = torch.cat((output,out))
+                bboxes_one_image = np.vstack((bboxes_one_image,image_pred_class.numpy())) 
+        
+        output.append(bboxes_one_image)
 
     try:
         return output
@@ -163,4 +160,38 @@ def bbox_iou(box1, box2):
 
 
 
+def load_classes(namesfile):
+    fp = open(namesfile,'r')
+    names = fp.read().split('\n')[:-1]
+    return names
+
+def letterbox_image(img, inp_dim):
+    """
+    resize the image with unchanged aspect ratio using padding
+
+    """
+
+    img_h, img_w = img.shape[0], img.shape[1]
+    w,h = inp_dim
+    new_w = int(img_w* min(w/img_w, h/img_h))
+    new_h = int(img_h * min(w/img_w, h/img_h))
+
+    resized_image = cv2.resize(img, (new_w, new_h), interpolation = cv2.INTER_CUBIC)
+
+    canvas = np.full((inp_dim[1], inp_dim[0],3),128)
+
+    canvas[(h-new_h)//2:(h-new_h)//2 + new_h,(w-new_w)//2:(w-new_w)//2 + new_w,  :] = resized_image
+
+    return canvas
+
+def prep_image(img, inp_dim):
+    """
+    Prepare image for inputting to the nural network
+
+    """
+    img = cv2.resize(img, (inp_dim, inp_dim))
+    img = img[:,:,::-1].transpose((2,0,1)).copy()
+    img = torch.from_numpy(img).float().div(255.0).unsqueeze(0)
+    
+    return img
 

@@ -52,12 +52,12 @@ def parse_cfg(cfgfile):
 def create_modules(blocks):
     net_info = blocks[0]
     module_list = nn.ModuleList()
-    prev_filters = 3
+    prev_filters = 3 # the image has three channels
     output_filters = []
 
     for index, x in enumerate(blocks[1:]): # blocks starts from 1 because the first one is net info
         module = nn.Sequential()
-        if x['type'] == 'convolutional':
+        if x['type'] == 'convolutional': # CONV -> BN -> activation
             activation = x['activation']
             try:
                 batch_normalize = int(x['batch_normalize'])
@@ -112,7 +112,7 @@ def create_modules(blocks):
 
             route = EmptyLayer()
             module.add_module('route_{}'.format(index),route)
-            if end < 0 :
+            if end < 0 : # 目的为保证end and start都是负数，保证后面的统一性
                 filters = output_filters[index+start] + output_filters[index+end]
             else:
                 filters = output_filters[index+start]
@@ -123,12 +123,12 @@ def create_modules(blocks):
 
         elif x['type'] == 'yolo':
             mask = x['mask'].split(',')
-            mask = [int(x) for x in mask]
+            mask = [int(x) for x in mask] # 要使用第几个anchors
 
             anchors = x['anchors'].split(',')
             anchors = [int(a) for a in anchors]
-            anchors = [(anchors[i], anchors[i+1]) for i in range(0, len(anchors), 2)]
-            anchors = [anchors[i] for i in mask]
+            anchors = [(anchors[i], anchors[i+1]) for i in range(0, len(anchors), 2)] # 每个anchors有两个数，分别代表h,w
+            anchors = [anchors[i] for i in mask] # 选择所需要的anchors
 
             detection = DetectionLayer(anchors)
             module.add_module("Detection_{}".format(index), detection)
@@ -161,9 +161,9 @@ class Darknet(nn.Module):
         self.net_info, self.module_list = create_modules(self.blocks)
 
     def forward(self,x, CUDA):
-        detection = []
+        detection = [] # 对yolo的结果进行储存
         modules = self.blocks[1:]
-        outputs = {} # cache the outputs for the route layer
+        outputs = {} # 储存每一次moudle的结果
         write = 0
 
         for i, module in enumerate(modules):
@@ -172,7 +172,7 @@ class Darknet(nn.Module):
             if module_type == 'convolutional' or module_type == 'upsample':
                 x = self.module_list[i](x)
 
-            elif module_type == 'route':
+            elif module_type == 'route': # 直接提取之前的feature map 然后在进行拼接（num>2）,增加filter数目
                 layers = module['layers']
                 layers = [int(a) for a in layers]
 
@@ -190,7 +190,7 @@ class Darknet(nn.Module):
 
                     x = torch.cat((map1, map2), 1)
 
-            elif module_type == 'shortcut':
+            elif module_type == 'shortcut': #  shortchu 对残积进行拼接，前一层和from的那一层直接是相同位置的数直接相加
                 from_ = int(module['from'])
                 x = outputs[i-1] + outputs[i+from_]
 
@@ -203,6 +203,9 @@ class Darknet(nn.Module):
                 num_classes = int(module['classes'])
 
                 # transform
+                # 在到yolo层时，从cfg文件中可以看出filter 层数为225（3*85），3个anchors，85个attributes
+                #所以现在 x 的shape 为[Batch,225,N,N] , N 为grid cell 的个数
+                # predict_transform 的作用是把[Batch,225,N,N] -> [Batch,3,N,N,85]
                 x = x.data
                 x = predict_transform(x, inp_dim, anchors,num_classes,CUDA)
 
@@ -212,7 +215,7 @@ class Darknet(nn.Module):
                 else:
                     detections = torch.cat((detections, x), 1)
 
-            outputs[i] = x
+            outputs[i] = x # outputs 储存每一次module处理的结果，以供后面进行shortcut和route操作
 
         try:
             return detections
