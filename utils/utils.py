@@ -246,7 +246,7 @@ def compute_loss(p, targets, model):  # predictions, targets, model
     BCE = nn.BCEWithLogitsLoss()
 
     # Compute losses
-    h = model.hyp  # hyperparameters
+    h = model.hyperparams  # hyperparameters
     bs = p[0].shape[0]  # batch size
     k = h['k'] * bs  # loss gain
     for i, pi0 in enumerate(p):  # layer i predictions, i
@@ -273,7 +273,7 @@ def compute_loss(p, targets, model):  # predictions, targets, model
 
 def build_targets(model, targets):
     # targets = [image, class, x, y, w, h]
-    iou_thres = model.hyp['iou_t']  # hyperparameter
+    iou_thres = model.hyperparams['iou_t']  # hyperparameter
     if type(model) in (nn.parallel.DataParallel, nn.parallel.DistributedDataParallel):
         model = model.module
 

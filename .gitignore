@@ -6,3 +6,5 @@
 Untitled.ipynb
 __pycache__/
 data/
+*.weights
+*.pt

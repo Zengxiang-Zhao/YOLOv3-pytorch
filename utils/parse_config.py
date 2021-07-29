@@ -16,31 +16,28 @@ def parse_model_cfg(path):
 
     """
 
-    file = open(path, 'r')
-    file_lines = file.read().split('\n') # split into lines
-    file_lines = [l for l in file_lines if len(l) > 0] # get rid of empty lines
+    file = open(path,'r')
+    lines = file.read().split('\n') 
+    lines = [x for x in lines if len(x) >0] # 去除空行
+    lines = [x for x in lines if x[0] != '#'] #去除注释行
+    lines = [x.strip() for x in lines] 
 
-    model_layers = [] # to store layer dict
-    layer = {} # dictionary to store layer info
+    block = {} # store as dictionary
+    blocks = []
 
-    write_flag = False # whether it is the end of layer
-    for l in file_lines:
-        if l[0] == '[':
-            if write_flag:
-                model_layers.append(layer)
-                layer = {}
-            layer['type'] = l[1:-1]
-            write_flag = True
-
-        elif l[0] == '#':
-            continue
+    for line in lines:
+        if line[0] == '[':
+            if len(block) != 0:
+                blocks.append(block) # 把上一个block添加到blocks中
+                block= {}
+            block['type'] = line[1:-1].strip() # 下一个block的类型名称
         else:
-            key,value = l.strip().split('=')
-            layer[key] = value
+            key,value = line.split('=')
+            block[key.strip()] = value.strip()
 
-    model_layers.append(layer)
+    blocks.append(block) # 把最后一个block 也加入
 
-    return model_layer
+    return blocks
 
 
 
