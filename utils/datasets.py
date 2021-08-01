@@ -14,9 +14,27 @@ from tqdm import tqdm
 from utils.utils import xyxy2xywh
 
 
+class Image_dataset_detect(Dataset):
+    def __init__(self,img_list,inp_dim):
+        super(Image_dataset_test,self).__init__()
+        self.img_list = img_list
+        self.resize_function = resize_function
+        self.inp_dim = inp_dim
+        
+    def __len__(self):
+        return len(self.img_list)
+    
+    def __getitem__(self,indx):
+        # get image
+        img_path = self.img_list[indx]
+        img = cv2.imread(img_path)
+
+        resized_image, ratio,_,_ = letterbox(img,self.inp_dim)
+#         resized_image = resized_image[:,:,::-1]
+        return resized_image,ratio,img_path
 
 class LoadImagesAndLabels(Dataset):  # for training/testing
-    def __init__(self, imgs_path,labels_path, img_size=416, augment=False):
+    def __init__(self, imgs_path,labels_path, img_size=416, augment=False, debug=False):
         img_formats = ['.jpg', '.jpeg', '.png', '.tif']
         self.imgs_path = imgs_path
         self.labels_path = labels_path
@@ -33,6 +51,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             for x in self.imgs_list]
 
         assert len(self.imgs_list) > 0, 'No images found in %s' % imgs_path
+        if debug:
+            self.imgs_list = self.imgs_list[:4]
+            self.labels_list = self.labels_list[:4]
 
         self.img_size = img_size
         self.augment = augment

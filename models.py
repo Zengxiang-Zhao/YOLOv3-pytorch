@@ -7,6 +7,7 @@ import torch
 from utils.parse_config import *
 import numpy as np
 # from utils.utils import *
+from utils.torch_utils import *
 
 
 def create_modules(module_defs):
@@ -142,7 +143,7 @@ class Darknet(nn.Module):
         self.module_defs = parse_model_cfg(cfg)
         self.module_defs[0]['cfg'] = cfg
         self.module_defs[0]['height'] = img_size
-        self.hyperparams, self.module_list = create_modules(self.module_defs)
+        self.hyp, self.module_list = create_modules(self.module_defs)
         self.yolo_layers = get_yolo_layers(self)
 
         # Needed to write header when saving weights
@@ -178,20 +179,20 @@ class Darknet(nn.Module):
             io, p = list(zip(*output))  # inference output, training output
             return torch.cat(io, 1), p
 
-    # def fuse(self):
-    #     # Fuse Conv2d + BatchNorm2d layers throughout model
-    #     fused_list = nn.ModuleList()
-    #     for a in list(self.children())[0]:
-    #         for i, b in enumerate(a):
-    #             if isinstance(b, nn.modules.batchnorm.BatchNorm2d):
-    #                 # fuse this bn layer with the previous conv2d layer
-    #                 conv = a[i - 1]
-    #                 fused = torch_utils.fuse_conv_and_bn(conv, b)
-    #                 a = nn.Sequential(fused, *list(a.children())[i + 1:])
-    #                 break
-    #         fused_list.append(a)
-    #     self.module_list = fused_list
-    #     # model_info(self)  # yolov3-spp reduced from 225 to 152 layers
+    def fuse(self):
+        # Fuse Conv2d + BatchNorm2d layers throughout model
+        fused_list = nn.ModuleList()
+        for a in list(self.children())[0]:
+            for i, b in enumerate(a):
+                if isinstance(b, nn.modules.batchnorm.BatchNorm2d):
+                    # fuse this bn layer with the previous conv2d layer
+                    conv = a[i - 1]
+                    fused = torch_utils.fuse_conv_and_bn(conv, b)
+                    a = nn.Sequential(fused, *list(a.children())[i + 1:])
+                    break
+            fused_list.append(a)
+        self.module_list = fused_list
+        # model_info(self)  # yolov3-spp reduced from 225 to 152 layers
 
 
 def get_yolo_layers(model):

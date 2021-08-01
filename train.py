@@ -32,7 +32,8 @@ def train(
         labels_path,
         img_size=416,
         epochs=273,  # 500200 batches at bs 64, dataset length 117263
-        batch_size=16
+        batch_size=16,
+        transfer = False,
 ):
 
 
@@ -41,7 +42,7 @@ def train(
 
     # Initialize model
     model = Darknet(cfg, img_size).to(device)
-    load_darknet_weights(model,weight_file)
+    # load_darknet_weights(model,weight_file)
 
     # Optimizer
     optimizer = optim.SGD(model.parameters(), lr=hyp['lr0'], momentum=hyp['momentum'], weight_decay=hyp['weight_decay'])
@@ -52,6 +53,22 @@ def train(
     nf = int(model.module_defs[model.yolo_layers[0] - 1]['filters'])  # yolo layer size (i.e. 255)
     
     # load the model
+    if transfer:
+        assert weight_file.endswith('.pt'), 'Please convert the weights to pytorch style'
+        chkpt = torch.load(weight_file , map_location=device)
+        model.load_state_dict({k: v for k, v in chkpt['model'].items() if v.numel() > 1 and v.shape[0] != 255},
+                              strict=False) # only load state of conv witch not the former conv of yolo layer
+        
+        for p in model.parameters():
+            p.requires_grad = True if p.shape[0] == nf else False
+    else:
+        if weight_file.endswith('.pt'):
+            chkpt = torch.load(weight_file, map_location=device)
+            model.load_state_dict(chkpt['model'])
+        elif weight_file.endswith('.weights'): # YOLO original weights storage style
+            load_darknet_weights(model,weight_file)
+        else:
+            print(f'The {weight_file} if not compatible for the model')
 
     # Scheduler https://github.com/ultralytics/yolov3/issues/238
 
@@ -72,7 +89,7 @@ def train(
 
     # Start training
     t = time.time()
-    model.hyperparams = hyp  # attach hyperparameters to model
+    model.hyp = hyp  # attach hyperparameters to model
     model_info(model)
     nb = len(dataloader)
     results = (0, 0, 0, 0, 0)  # P, R, mAP, F1, test_loss
@@ -160,6 +177,7 @@ if __name__ == '__main__':
     parser.add_argument('--img-size', type=int, default=416, help='pixels')
     parser.add_argument('--imgs_path', type=str, help='folder contain images')
     parser.add_argument('--labels_path', type=str, help='folder contain labels')
+    parser.add_argument('--transfer', type=bool, help='Whether only train the yolo layers')
     opt = parser.parse_args()
     print(opt, end='\n\n')
 
@@ -173,6 +191,7 @@ if __name__ == '__main__':
         img_size=opt.img_size,
         epochs=opt.epochs,
         batch_size=opt.batch_size,
+        transfer=opt.transfer,
     )
 
 

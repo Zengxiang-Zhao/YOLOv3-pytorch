@@ -8,3 +8,5 @@ __pycache__/
 data/
 *.weights
 *.pt
+*/*.json
+*.json
