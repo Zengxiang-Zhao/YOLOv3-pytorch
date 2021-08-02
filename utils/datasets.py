@@ -16,33 +16,121 @@ from utils.utils import xyxy2xywh,letterbox_image
 
 # for detect
 class Image_dataset_detect(Dataset):
-    def __init__(self,imgs_path,inp_dim, debug=False):
+    def __init__(self,path,img_size=608):
         super(Image_dataset_detect,self).__init__()
+        self.path = path
+        self.img_size = img_size
         img_formats = ['.jpg', '.jpeg', '.png', '.tif']
-        assert os.path.isdir(imgs_path), f'the path {imgs_path} is not dir'
-        self.imgs_path = imgs_path
-        # create imgs_list and labels_list
-        self.imgs_list = os.listdir(self.imgs_path)
-        self.imgs_list = [x for x in self.imgs_list if os.path.splitext(x)[-1].lower() in img_formats]
 
-        if debug:
-            self.imgs_list = self.imgs_list[:3]
+        files = []
+        if os.path.isdir(path): # 包含图片的文件夹
+            files = sorted(glob.glob('%s/*.*' % path))
+        elif os.path.isfile(path): # 判断为单个图片文件
+            files = [path]
 
-        self.inp_dim = inp_dim
-        
+        self.files = [x for x in files if os.path.splitext(x)[-1].lower() in img_formats] # store image path
+        assert len(self.files) >0 , f'There is no images in {self.path}'
+
     def __len__(self):
-        return len(self.imgs_list)
-    
-    def __getitem__(self,indx):
-        # get image
-        img_path = os.path.join(self.imgs_path, self.imgs_list[indx] )
-        img = cv2.imread(img_path)
+        return len(self.files)
 
-        assert img  is not None, f'Could not read the image in [{img_path}]' 
+    def __getitem__(self,index):
+        path = self.files[index]
 
-        resized_image, ratio = letterbox_image(img,self.inp_dim)
-#         resized_image = resized_image[:,:,::-1]
-        return resized_image,ratio,img_path
+        img0 = cv2.imread(path)  # BGR
+        assert img0 is not None, 'File Not Found ' + path
+        print('image %g/%g %s: ' % (self.count, self.nF, path), end='')
+        img, _, _, _ = letterbox(img0, height=self.height)
+        print('%gx%g ' % img.shape[:2], end='')  # print image size
+
+        # Normalize RGB
+        img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB
+        img = np.ascontiguousarray(img, dtype=np.float32)  # uint8 to float32
+        img /= 255.0  # 0 - 255 to 0.0 - 1.0
+
+        # cv2.imwrite(path + '.letterbox.jpg', 255 * img.transpose((1, 2, 0))[:, :, ::-1])  # save letterbox image
+        return path, img, img0
+
+
+
+class LoadImages:  # for inference
+    def __init__(self, path, img_size=416):
+        self.height = img_size
+        img_formats = ['.jpg', '.jpeg', '.png', '.tif']
+        vid_formats = ['.mov', '.avi', '.mp4']
+
+        files = []
+        if os.path.isdir(path):
+            files = sorted(glob.glob('%s/*.*' % path))
+        elif os.path.isfile(path):
+            files = [path]
+
+        images = [x for x in files if os.path.splitext(x)[-1].lower() in img_formats]
+        videos = [x for x in files if os.path.splitext(x)[-1].lower() in vid_formats]
+        nI, nV = len(images), len(videos)
+
+        self.files = images + videos
+        self.nF = nI + nV  # number of files
+        self.video_flag = [False] * nI + [True] * nV
+        self.mode = 'images'
+        if any(videos):
+            self.new_video(videos[0])  # new video
+        else:
+            self.cap = None
+        assert self.nF > 0, 'No images or videos found in ' + path
+
+    def __iter__(self):
+        self.count = 0
+        return self
+
+    def __next__(self):
+        if self.count == self.nF:
+            raise StopIteration
+        path = self.files[self.count]
+
+        if self.video_flag[self.count]:
+            # Read video
+            self.mode = 'video'
+            ret_val, img0 = self.cap.read()
+            if not ret_val:
+                self.count += 1
+                self.cap.release()
+                if self.count == self.nF:  # last video
+                    raise StopIteration
+                else:
+                    path = self.files[self.count]
+                    self.new_video(path)
+                    ret_val, img0 = self.cap.read()
+
+            self.frame += 1
+            print('video %g/%g (%g/%g) %s: ' % (self.count + 1, self.nF, self.frame, self.nframes, path), end='')
+
+        else:
+            # Read image
+            self.count += 1
+            img0 = cv2.imread(path)  # BGR
+            assert img0 is not None, 'File Not Found ' + path
+            print('image %g/%g %s: ' % (self.count, self.nF, path), end='')
+
+        # Padded resize
+        img, _, _, _ = letterbox(img0, height=self.height)
+        print('%gx%g ' % img.shape[:2], end='')  # print image size
+
+        # Normalize RGB
+        img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB
+        img = np.ascontiguousarray(img, dtype=np.float32)  # uint8 to float32
+        img /= 255.0  # 0 - 255 to 0.0 - 1.0
+
+        # cv2.imwrite(path + '.letterbox.jpg', 255 * img.transpose((1, 2, 0))[:, :, ::-1])  # save letterbox image
+        return path, img, img0, self.cap
+
+    def new_video(self, path):
+        self.frame = 0
+        self.cap = cv2.VideoCapture(path)
+        self.nframes = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    def __len__(self):
+        return self.nF  # number of files
 
 class LoadImagesAndLabels(Dataset):  # for training/testing
     def __init__(self, imgs_path,labels_path, img_size=416, augment=False, debug=False):
@@ -173,7 +261,7 @@ def letterbox(img, height=416, color=(127.5, 127.5, 127.5), mode='rect'):
         dw = (height - new_shape[0]) / 2  # width padding
         dh = (height - new_shape[1]) / 2  # height padding
 
-    top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
+    top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1)) # top -0.1, bottom +0.1 目的为了不出界
     left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
     img = cv2.resize(img, new_shape, interpolation=cv2.INTER_AREA)  # resized, no border
     img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # padded square

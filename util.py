@@ -69,7 +69,7 @@ def write_results(prediction, confidence, num_classes, nms_conf = 0.4):
     box_corner[:,:,1] = (prediction[:,:,1] - prediction[:,:,3]/2)
     box_corner[:,:,2] = (prediction[:,:,0] + prediction[:,:,2]/2)
     box_corner[:,:,3] = (prediction[:,:,1] + prediction[:,:,3]/2)
-    prediction[:,:,4] = box_corner[:,:,4]
+    prediction[:,:,:4] = box_corner[:,:,:4] # should copy all the former 4 elements
 
     batch_size = prediction.size(0)
     write = False
@@ -159,3 +159,9 @@ def bbox_iou(box1, box2):
     iou = inter_area/(b1_area + b2_area - inter_area)
 
     return iou
+
+def load_classes(path):
+    # Loads class labels at 'path'
+    fp = open(path, 'r')
+    names = fp.read().split('\n')
+    return list(filter(None, names))  # filter removes empty strings (such as last line)
