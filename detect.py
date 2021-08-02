@@ -1,6 +1,9 @@
 import argparse
 import time
 from sys import platform
+import torch
+import numpy as np 
+from torch.utils.data import DataLoader, Dataset
 
 from models import *
 from utils.datasets import *
@@ -9,28 +12,27 @@ from utils.utils import *
 
 def detect(
         cfg,
-        data_cfg,
+        names, # class names
+        imgs_path, # original test image path
         weights,
-        images,
+        batch_size,
         output='output',  # output folder
         img_size=416,
         conf_thres=0.5,
         nms_thres=0.5,
-        save_txt=False,
-        save_images=True,
-        webcam=False
+        debug = False,
+
 ):
-    device = torch_utils.select_device()
+    cuda = torch.cuda.is_available()
+    device = torch.device('cuda:0' if cuda else 'cpu')
+
     if os.path.exists(output):
         shutil.rmtree(output)  # delete output folder
     os.makedirs(output)  # make new output folder
 
     # Initialize model
-    if ONNX_EXPORT:
-        s = (416, 416)  # onnx model image size
-        model = Darknet(cfg, s)
-    else:
-        model = Darknet(cfg, img_size)
+
+    model = Darknet(cfg, img_size)
 
     # Load weights
     if weights.endswith('.pt'):  # pytorch format
@@ -39,99 +41,66 @@ def detect(
         _ = load_darknet_weights(model, weights)
 
     # Fuse Conv2d + BatchNorm2d layers
-    model.fuse()
+    # model.fuse()
 
     # Eval mode
     model.to(device).eval()
 
-    if ONNX_EXPORT:
-        img = torch.zeros((1, 3, s[0], s[1]))
-        torch.onnx.export(model, img, 'weights/export.onnx', verbose=True)
-        return
-
     # Set Dataloader
-    vid_path, vid_writer = None, None
-    if webcam:
-        save_images = False
-        dataloader = LoadWebcam(img_size=img_size)
-    else:
-        dataloader = LoadImages(images, img_size=img_size)
+    dataset = Image_dataset_detect(imgs_path,img_size,debug = debug)
+
+    dataloader = DataLoader(dataset, batch_size= batch_size)
 
     # Get classes and colors
-    classes = load_classes(parse_data_cfg(data_cfg)['names'])
+    classes = load_classes(names)
+    num_classes = len(classes)
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(len(classes))]
 
-    for i, (path, img, im0, vid_cap) in enumerate(dataloader):
-        t = time.time()
-        save_path = str(Path(output) / Path(path).name)
+    print('Finished loading data')
+    
+    # get the predicted bboxes
+    print('Predicting bboxes...')
+    ratio_list = []
+    bboxes_list = []
+    img_path_list = []
+    
+    for batch in dataloader:
+        resized_images, ratio, img_path = batch
+        img_path_list += list(img_path)
+        ratio_list += ratio
+        predictions,_ = model(resized_images)
+        bboxes = write_results(predictions, confidence=conf_thres,num_classes=num_classes,nms_conf=nms_thres)
 
-        # Get detections
-        img = torch.from_numpy(img).unsqueeze(0).to(device)
-        pred, _ = model(img)
-        det = non_max_suppression(pred, conf_thres, nms_thres)[0]
+        bboxes_list += bboxes
 
-        if det is not None and len(det) > 0:
-            # Rescale boxes from 416 to true image size
-            det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
-
-            # Print results to screen
-            for c in det[:, -1].unique():
-                n = (det[:, -1] == c).sum()
-                print('%g %ss' % (n, classes[int(c)]), end=', ')
-
-            # Draw bounding boxes and labels of detections
-            for *xyxy, conf, cls_conf, cls in det:
-                if save_txt:  # Write to file
-                    with open(save_path + '.txt', 'a') as file:
-                        file.write(('%g ' * 6 + '\n') % (*xyxy, cls, conf))
-
-                # Add bbox to the image
-                label = '%s %.2f' % (classes[int(cls)], conf)
-                plot_one_box(xyxy, im0, label=label, color=colors[int(cls)])
-
-        print('Done. (%.3fs)' % (time.time() - t))
-
-        if webcam:  # Show live webcam
-            cv2.imshow(weights, im0)
-
-        if save_images:  # Save generated image with detections
-            if dataloader.mode == 'video':
-                if vid_path != save_path:  # new video
-                    vid_path = save_path
-                    if isinstance(vid_writer, cv2.VideoWriter):
-                        vid_writer.release()  # release previous video writer
-                    width = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                    height = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                    fps = vid_cap.get(cv2.CAP_PROP_FPS)
-                    vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'avc1'), fps, (width, height))
-                vid_writer.write(im0)
-
-            else:
-                cv2.imwrite(save_path, im0)
-
-    if save_images and platform == 'darwin':  # macos
-        os.system('open ' + output + ' ' + save_path)
-
+    print('Drawing bboxes...')
+    object_detect(img_path_list,img_size,classes, bboxes_list,ratio_list,colors,output_path = output)
+    print('\n Done \n')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, default='cfg/yolov3-spp.cfg', help='cfg file path')
-    parser.add_argument('--data-cfg', type=str, default='data/coco.data', help='coco.data file path')
-    parser.add_argument('--weights', type=str, default='weights/yolov3-spp.weights', help='path to weights file')
-    parser.add_argument('--images', type=str, default='data/samples', help='path to images')
+    parser.add_argument('--names', type=str, default='data/coco.names', help='coco.names file path')
+    parser.add_argument('--imgs_path', type=str, help='file path contain images')
+    parser.add_argument('--weights', type=str, default='weights/yolov3.weights', help='path to weights file')
+    parser.add_argument('--batch_size', type=int, default=4, help='batch size of DataLoader')
+    parser.add_argument('--output', type=str, default='output', help='marked images to store')
     parser.add_argument('--img-size', type=int, default=416, help='size of each image dimension')
     parser.add_argument('--conf-thres', type=float, default=0.5, help='object confidence threshold')
     parser.add_argument('--nms-thres', type=float, default=0.5, help='iou threshold for non-maximum suppression')
+    parser.add_argument('--debug', type=bool, default=False, help='use debug mode to test the script')
     opt = parser.parse_args()
     print(opt)
 
     with torch.no_grad():
         detect(
-            opt.cfg,
-            opt.data_cfg,
-            opt.weights,
-            opt.images,
+            cfg =opt.cfg,
+            names = opt.names,
+            imgs_path= opt.imgs_path,
+            weights = opt.weights,
+            batch_size = opt.batch_size,
             img_size=opt.img_size,
             conf_thres=opt.conf_thres,
-            nms_thres=opt.nms_thres
+            nms_thres=opt.nms_thres,
+            debug = opt.debug,
         )

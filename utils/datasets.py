@@ -8,28 +8,39 @@ from pathlib import Path
 import cv2
 import numpy as np
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset,DataLoader
 from tqdm import tqdm
 
-from utils.utils import xyxy2xywh
+from utils.utils import xyxy2xywh,letterbox_image
 
 
+# for detect
 class Image_dataset_detect(Dataset):
-    def __init__(self,img_list,inp_dim):
-        super(Image_dataset_test,self).__init__()
-        self.img_list = img_list
-        self.resize_function = resize_function
+    def __init__(self,imgs_path,inp_dim, debug=False):
+        super(Image_dataset_detect,self).__init__()
+        img_formats = ['.jpg', '.jpeg', '.png', '.tif']
+        assert os.path.isdir(imgs_path), f'the path {imgs_path} is not dir'
+        self.imgs_path = imgs_path
+        # create imgs_list and labels_list
+        self.imgs_list = os.listdir(self.imgs_path)
+        self.imgs_list = [x for x in self.imgs_list if os.path.splitext(x)[-1].lower() in img_formats]
+
+        if debug:
+            self.imgs_list = self.imgs_list[:3]
+
         self.inp_dim = inp_dim
         
     def __len__(self):
-        return len(self.img_list)
+        return len(self.imgs_list)
     
     def __getitem__(self,indx):
         # get image
-        img_path = self.img_list[indx]
+        img_path = os.path.join(self.imgs_path, self.imgs_list[indx] )
         img = cv2.imread(img_path)
 
-        resized_image, ratio,_,_ = letterbox(img,self.inp_dim)
+        assert img  is not None, f'Could not read the image in [{img_path}]' 
+
+        resized_image, ratio = letterbox_image(img,self.inp_dim)
 #         resized_image = resized_image[:,:,::-1]
         return resized_image,ratio,img_path
 
