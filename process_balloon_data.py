@@ -8,8 +8,8 @@ import cv2
 def xyxy2xywh(x):
     # Convert bounding box format from [x1, y1, x2, y2] to [x, y, w, h]
     y = copy.deepcopy(x)
-    y[0] = (x[0] + x[2]) / 2
-    y[1] = (x[ 1] + x[ 3]) / 2
+    y[0] = (x[0] + x[2]) // 2
+    y[1] = (x[ 1] + x[ 3]) // 2
     y[2] = x[ 2] - x[ 0]
     y[ 3] = x[ 3] - x[ 1]
     return y
@@ -58,7 +58,7 @@ def write_labels(output_path, dataset_dicts):
         objects = ''
         for box in data['annotations']:
             bbox = xyxy2xywh(box['bbox'])
-            str_box = [str('{:0.6f}'.format(e)) for e in bbox]
+            str_box = [str(e) for e in bbox]
             objects += str(box['category_id']) +' ' + ' '.join(str_box) + '\n'
         # write to file
         objects = objects.rstrip('\n')

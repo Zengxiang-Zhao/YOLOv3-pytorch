@@ -30,7 +30,7 @@ def train(
         weight_file,
         imgs_path,
         labels_path,
-        img_size=416,
+        img_size=608,
         epochs=273,  # 500200 batches at bs 64, dataset length 117263
         batch_size=16,
         transfer = False,
