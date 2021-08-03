@@ -35,7 +35,7 @@ def train(
         batch_size=16,
         transfer = False,
         debug = False,
-        names = 'data/coco.names',
+        names = None,
 ):
 
 
@@ -180,6 +180,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=16, help='size of each image batch')
     parser.add_argument('--cfg', type=str, default='cfg/yolov3.cfg', help='cfg file path')
     parser.add_argument('--weights', type=str, help='file path to yolov3.weights')
+    parser.add_argument('--names', type=str, help='file conatin object names')
     parser.add_argument('--img-size', type=int, default=416, help='pixels')
     parser.add_argument('--imgs_path', type=str, help='folder contain images')
     parser.add_argument('--labels_path', type=str, help='folder contain labels')
@@ -200,6 +201,7 @@ if __name__ == '__main__':
         batch_size=opt.batch_size,
         transfer= True if opt.transfer else False,
         debug = True if opt.debug else False,
+        names = opt.names
     )
 
 

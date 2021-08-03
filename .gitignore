@@ -5,7 +5,7 @@
 .ipynb_checkpoints/
 Untitled.ipynb
 __pycache__/
-data/
+data/ballon
 *.weights
 *.pt
 */*.json
@@ -15,4 +15,7 @@ data/
 */*.pt
 */*.weights
 results.txt
-
+results.json
+balloon
+*/*.zip
+*.zip
