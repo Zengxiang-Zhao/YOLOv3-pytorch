@@ -21,9 +21,9 @@ hyp = {'k': 10.39,  # loss multiple
 
 def test(
         cfg,
-        imgs_path,
-        labels_path,
-        names,
+        imgs_path=None,
+        labels_path=None,
+        names = None,
         weights=None,
         batch_size=16,
         img_size=416,
@@ -31,7 +31,9 @@ def test(
         conf_thres=0.001,
         nms_thres=0.5,
         save_json=False,
-        model=None
+        model=None,
+        dataloader = None,
+        debug = False,
 ):
     if model is None:
         cuda = torch.cuda.is_available()
@@ -60,12 +62,14 @@ def test(
 
 
     # Dataloader
-    dataset = LoadImagesAndLabels(imgs_path,labels_path, img_size=img_size, debug=True)
-    dataloader = DataLoader(dataset,
-                            batch_size=batch_size,
-                            # num_workers=4,
-                            pin_memory=True,
-                            collate_fn=dataset.collate_fn)
+    if dataloader is None:
+        dataset = LoadImagesAndLabels(imgs_path,labels_path, img_size=img_size, debug=debug)
+        dataloader = DataLoader(dataset,
+                                batch_size=batch_size,
+                                # num_workers=4,
+                                pin_memory=True,
+                                collate_fn=dataset.collate_fn)
+
 
     seen = 0
     model.eval()
@@ -202,8 +206,9 @@ if __name__ == '__main__':
     parser.add_argument('--iou-thres', type=float, default=0.5, help='iou threshold required to qualify as detected')
     parser.add_argument('--conf-thres', type=float, default=0.001, help='object confidence threshold')
     parser.add_argument('--nms-thres', type=float, default=0.5, help='iou threshold for non-maximum suppression')
-    parser.add_argument('--save-json',type=bool, help='save a cocoapi-compatible JSON results file')
+    parser.add_argument('--save-json',type=int, default=1, help='save a cocoapi-compatible JSON results file: 0 False, 1 True')
     parser.add_argument('--img-size', type=int, default=416, help='size of each image dimension')
+    parser.add_argument('--debug', type = int, default= 0, help='Whether to use two images to check: 0 False, 1 True')
     opt = parser.parse_args()
     print(opt, end='\n\n')
 
@@ -219,5 +224,6 @@ if __name__ == '__main__':
             iou_thres = opt.iou_thres,
             conf_thres = opt.conf_thres,
             nms_thres = opt.nms_thres,
-            save_json = opt.save_json
+            save_json = True if opt.save_json else False,
+            debug = True if opt.debug else False,
         )

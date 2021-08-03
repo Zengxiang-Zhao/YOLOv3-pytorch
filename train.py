@@ -34,6 +34,8 @@ def train(
         epochs=273,  # 500200 batches at bs 64, dataset length 117263
         batch_size=16,
         transfer = False,
+        debug = False,
+        names = 'data/coco.names',
 ):
 
 
@@ -51,24 +53,23 @@ def train(
     start_epoch = 0
     best_loss = float('inf')
     nf = int(model.module_defs[model.yolo_layers[0] - 1]['filters'])  # yolo layer size (i.e. 255)
-    
     # load the model
-    if transfer:
-        assert weight_file.endswith('.pt'), 'Please convert the weights to pytorch style'
-        chkpt = torch.load(weight_file , map_location=device)
-        model.load_state_dict({k: v for k, v in chkpt['model'].items() if v.numel() > 1 and v.shape[0] != 255},
-                              strict=False) # only load state of conv witch not the former conv of yolo layer
-        
-        for p in model.parameters():
-            p.requires_grad = True if p.shape[0] == nf else False
-    else:
-        if weight_file.endswith('.pt'):
+    if weight_file.endswith('.pt'):
             chkpt = torch.load(weight_file, map_location=device)
             model.load_state_dict(chkpt['model'])
-        elif weight_file.endswith('.weights'): # YOLO original weights storage style
-            load_darknet_weights(model,weight_file)
-        else:
-            print(f'The {weight_file} if not compatible for the model')
+    elif weight_file.endswith('.weights'): # YOLO original weights storage style
+        load_darknet_weights(model,weight_file)
+    else:
+        print(f'The {weight_file} if not compatible for the model')
+
+    if transfer:
+        print('\nIn transfer mode will only train the yolo layer Conv\n')
+        for p in model.parameters():
+            p.requires_grad = True if p.shape[0] == nf else False
+    # else:
+    #     for p in model.parameters():
+    #         p.requires_grad = True
+
 
     # Scheduler https://github.com/ultralytics/yolov3/issues/238
 
@@ -76,8 +77,9 @@ def train(
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lf, last_epoch=start_epoch - 1)
 
     # Dataset
-    dataset = LoadImagesAndLabels(imgs_path, labels_path, img_size=img_size, augment=True)
+    dataset = LoadImagesAndLabels(imgs_path, labels_path, img_size=img_size, augment=True, debug=debug)
 
+    print(f'There are totally {len(dataset)} images to process!')
 
     # Dataloader
     dataloader = DataLoader(dataset,
@@ -91,9 +93,12 @@ def train(
     t = time.time()
     model.hyp = hyp  # attach hyperparameters to model
     model_info(model)
+
     nb = len(dataloader)
     results = (0, 0, 0, 0, 0)  # P, R, mAP, F1, test_loss
-    
+
+    print(f'There are totally **{len(dataset)}** images to process!')
+
     for epoch in range(start_epoch, epochs):
         model.train()
         print(('\n%8s%12s' + '%10s' * 7) % ('Epoch', 'Batch', 'xy', 'wh', 'conf', 'cls', 'total', 'nTargets', 'time'))
@@ -129,8 +134,9 @@ def train(
             print(s)
 
         with torch.no_grad():
-            results = test.test(cfg, data_cfg, batch_size=batch_size, img_size=img_size, model=model,
-                                conf_thres=0.1)
+            print('\n')
+            results = test.test(cfg, names = names, batch_size=batch_size, img_size=img_size, model=model,
+                                conf_thres=0.1, dataloader=dataloader)
         # Write epoch results
         with open('results.txt', 'a') as file:
             file.write(s + '%11.3g' * 5 % results + '\n')  # P, R, mAP, F1, test_loss
@@ -177,7 +183,8 @@ if __name__ == '__main__':
     parser.add_argument('--img-size', type=int, default=416, help='pixels')
     parser.add_argument('--imgs_path', type=str, help='folder contain images')
     parser.add_argument('--labels_path', type=str, help='folder contain labels')
-    parser.add_argument('--transfer', type=bool, help='Whether only train the yolo layers')
+    parser.add_argument('--transfer', type = int,default=0, help='Whether only train the yolo layers: 0 False, 1 True')
+    parser.add_argument('--debug', type=int,default=0, help='if Ture only use two images: 0 False, 1 True')
     opt = parser.parse_args()
     print(opt, end='\n\n')
 
@@ -191,7 +198,8 @@ if __name__ == '__main__':
         img_size=opt.img_size,
         epochs=opt.epochs,
         batch_size=opt.batch_size,
-        transfer=opt.transfer,
+        transfer= True if opt.transfer else False,
+        debug = True if opt.debug else False,
     )
 
 

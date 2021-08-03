@@ -151,8 +151,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
         assert len(self.imgs_list) > 0, 'No images found in %s' % imgs_path
         if debug:
-            self.imgs_list = self.imgs_list[:4]
-            self.labels_list = self.labels_list[:4]
+            self.imgs_list = self.imgs_list[:2]
+            self.labels_list = self.labels_list[:2]
 
         self.img_size = img_size
         self.augment = augment
