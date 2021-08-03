@@ -10,3 +10,9 @@ data/
 *.pt
 */*.json
 *.json
+*.weights
+*.pt
+*/*.pt
+*/*.weights
+results.txt
+
