@@ -38,8 +38,12 @@ def train(
         names = None,
         test_imgs_path=None,
         test_labels_path=None,
+        resume = False,
 ):
 
+    weights = 'weights' + os.sep
+    latest = weights + 'latest.pt'
+    best = weights + 'best.pt'
 
     cuda = torch.cuda.is_available()
     device = torch.device('cuda:0' if cuda else 'cpu')
@@ -57,13 +61,17 @@ def train(
     best_loss = float('inf')
     nf = int(model.module_defs[model.yolo_layers[0] - 1]['filters'])  # yolo layer size (i.e. 255)
     # load the model
-    if weight_file.endswith('.pt'):
-            chkpt = torch.load(weight_file, map_location=device)
-            model.load_state_dict(chkpt['model'])
-    elif weight_file.endswith('.weights'): # YOLO original weights storage style
-        load_darknet_weights(model,weight_file)
+    if resume:
+        chkpt = torch.load(latest, map_location=device)  # load checkpoint
+        model.load_state_dict(chkpt['model'])
     else:
-        print(f'The {weight_file} if not compatible for the model')
+        if weight_file.endswith('.pt'):
+                chkpt = torch.load(weight_file, map_location=device)
+                model.load_state_dict(chkpt['model'])
+        elif weight_file.endswith('.weights'): # YOLO original weights storage style
+            load_darknet_weights(model,weight_file)
+        else:
+            print(f'The {weight_file} if not compatible for the model')
 
     if transfer:
         print('\nIn transfer mode will only train the yolo layer Conv\n')
@@ -160,29 +168,29 @@ def train(
         if test_loss < best_loss:
             best_loss = test_loss
 
-        # # Save training results
-        # save = True and not opt.nosave
-        # if save:
-        #     # Create checkpoint
-        #     chkpt = {'epoch': epoch,
-        #              'best_loss': best_loss,
-        #              'model': model.module.state_dict() if type(
-        #                  model) is nn.parallel.DistributedDataParallel else model.state_dict(),
-        #              'optimizer': optimizer.state_dict()}
+        # Save training results
+        save = True
+        if save:
+            # Create checkpoint
+            chkpt = {'epoch': epoch,
+                     'best_loss': best_loss,
+                     'model': model.module.state_dict() if type(
+                         model) is nn.parallel.DistributedDataParallel else model.state_dict(),
+                     'optimizer': optimizer.state_dict()}
 
-        #     # Save latest checkpoint
-        #     torch.save(chkpt, latest)
+            # Save latest checkpoint
+            torch.save(chkpt, latest)
 
-        #     # Save best checkpoint
-        #     if best_loss == test_loss:
-        #         torch.save(chkpt, best)
+            # Save best checkpoint
+            if best_loss == test_loss:
+                torch.save(chkpt, best)
 
-        #     # Save backup every 10 epochs (optional)
-        #     if epoch > 0 and epoch % 10 == 0:
-        #         torch.save(chkpt, weights + 'backup%g.pt' % epoch)
+            # # Save backup every 10 epochs (optional)
+            # if epoch > 0 and epoch % 10 == 0:
+            #     torch.save(chkpt, weights + 'backup%g.pt' % epoch)
 
-        #     # Delete checkpoint
-        #     del chkpt
+            # Delete checkpoint
+            del chkpt
 
     return results
 
@@ -202,6 +210,7 @@ if __name__ == '__main__':
     parser.add_argument('--test_labels_path', type=str, help='folder contain labels')
     parser.add_argument('--transfer', type = int,default=0, help='Whether only train the yolo layers: 0 False, 1 True')
     parser.add_argument('--debug', type=int,default=0, help='if Ture only use two images: 0 False, 1 True')
+    parser.add_argument('--resume', type=int,default=0, help='if Ture to resume: 0 False, 1 True')
     opt = parser.parse_args()
     print(opt, end='\n\n')
 
@@ -219,7 +228,8 @@ if __name__ == '__main__':
         batch_size=opt.batch_size,
         transfer= True if opt.transfer else False,
         debug = True if opt.debug else False,
-        names = opt.names
+        names = opt.names,
+        resume = True if opt.resume else False,
     )
 
 
