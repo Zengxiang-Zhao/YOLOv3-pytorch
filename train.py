@@ -28,14 +28,16 @@ hyp = {'k': 10.39,  # loss multiple
 def train(
         cfg,
         weight_file,
-        imgs_path,
-        labels_path,
+        train_imgs_path,
+        train_labels_path,
         img_size=608,
         epochs=273,  # 500200 batches at bs 64, dataset length 117263
         batch_size=16,
         transfer = False,
         debug = False,
         names = None,
+        test_imgs_path=None,
+        test_labels_path=None,
 ):
 
 
@@ -47,7 +49,8 @@ def train(
     # load_darknet_weights(model,weight_file)
 
     # Optimizer
-    optimizer = optim.SGD(model.parameters(), lr=hyp['lr0'], momentum=hyp['momentum'], weight_decay=hyp['weight_decay'])
+    # optimizer = optim.SGD(model.parameters(), lr=hyp['lr0'], momentum=hyp['momentum'], weight_decay=hyp['weight_decay'])
+    optimizer = optim.Adam(model.parameters(),lr = hyp['lr0'])
 
     cutoff = -1  # backbone reaches to cutoff layer
     start_epoch = 0
@@ -73,38 +76,49 @@ def train(
 
     # Scheduler https://github.com/ultralytics/yolov3/issues/238
 
-    lf = lambda x: 1 - 10 ** (hyp['lrf'] * (1 - x / epochs))  # inverse exp ramp
+    # lf = lambda x: 1 - 10 ** (hyp['lrf'] * (1 - x / epochs))  # inverse exp ramp
+    lf = lambda epoch: 0.65 ** epoch
+
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lf, last_epoch=start_epoch - 1)
 
-    # Dataset
-    dataset = LoadImagesAndLabels(imgs_path, labels_path, img_size=img_size, augment=True, debug=debug)
+    # Dataset for train
+    train_dataset = LoadImagesAndLabels(train_imgs_path, train_labels_path, img_size=img_size, augment=True, debug=debug)
 
-    print(f'There are totally {len(dataset)} images to process!')
+    print(f'There are totally {len(train_dataset)} images to process!')
 
-    # Dataloader
-    dataloader = DataLoader(dataset,
+    # Dataloader for train
+    train_dataloader = DataLoader(train_dataset,
                             batch_size=batch_size,
                             # num_workers=opt.num_workers,
                             shuffle=True,
                             pin_memory=True,
-                            collate_fn=dataset.collate_fn)
+                            collate_fn=train_dataset.collate_fn)
+
+    # for test 
+    test_dataset = LoadImagesAndLabels(test_imgs_path,test_labels_path, img_size=img_size, debug=debug)
+    test_dataloader = DataLoader(test_dataset,
+                            batch_size=batch_size,
+                            # num_workers=4,
+                            pin_memory=True,
+                            collate_fn=test_dataset.collate_fn)
 
     # Start training
     t = time.time()
     model.hyp = hyp  # attach hyperparameters to model
     model_info(model)
 
-    nb = len(dataloader)
+    nb = len(train_dataloader)
     results = (0, 0, 0, 0, 0)  # P, R, mAP, F1, test_loss
 
-    print(f'There are totally **{len(dataset)}** images to process!')
+    print(f'There are totally **{len(train_dataset)}** images to process for training!')
+    print(f'There are totally **{len(test_dataset)}** images to process for testing!')
 
     for epoch in range(start_epoch, epochs):
         model.train()
         print(('\n%8s%12s' + '%10s' * 7) % ('Epoch', 'Batch', 'xy', 'wh', 'conf', 'cls', 'total', 'nTargets', 'time'))
 
         mloss = torch.zeros(5).to(device)  # mean losses
-        for i, (imgs, targets, _, _) in enumerate(dataloader):
+        for i, (imgs, targets, _, _) in enumerate(train_dataloader):
             imgs = imgs.to(device)
             targets = targets.to(device)
             nt = len(targets)
@@ -136,7 +150,7 @@ def train(
         with torch.no_grad():
             print('\n')
             results = test.test(cfg, names = names, batch_size=batch_size, img_size=img_size, model=model,
-                                conf_thres=0.1, dataloader=dataloader)
+                                conf_thres=0.1, dataloader=test_dataloader)
         # Write epoch results
         with open('results.txt', 'a') as file:
             file.write(s + '%11.3g' * 5 % results + '\n')  # P, R, mAP, F1, test_loss
@@ -182,8 +196,10 @@ if __name__ == '__main__':
     parser.add_argument('--weights', type=str, help='file path to yolov3.weights')
     parser.add_argument('--names', type=str, help='file conatin object names')
     parser.add_argument('--img-size', type=int, default=416, help='pixels')
-    parser.add_argument('--imgs_path', type=str, help='folder contain images')
-    parser.add_argument('--labels_path', type=str, help='folder contain labels')
+    parser.add_argument('--train_imgs_path', type=str, help='folder contain images')
+    parser.add_argument('--train_labels_path', type=str, help='folder contain labels')
+    parser.add_argument('--test_imgs_path', type=str, help='folder contain images')
+    parser.add_argument('--test_labels_path', type=str, help='folder contain labels')
     parser.add_argument('--transfer', type = int,default=0, help='Whether only train the yolo layers: 0 False, 1 True')
     parser.add_argument('--debug', type=int,default=0, help='if Ture only use two images: 0 False, 1 True')
     opt = parser.parse_args()
@@ -194,8 +210,10 @@ if __name__ == '__main__':
     results = train(
         cfg = opt.cfg,
         weight_file = opt.weights,
-        imgs_path = opt.imgs_path,
-        labels_path = opt.labels_path,
+        train_imgs_path = opt.train_imgs_path,
+        train_labels_path = opt.train_labels_path,
+        test_imgs_path = opt.test_imgs_path,
+        test_labels_path = opt.test_labels_path,
         img_size=opt.img_size,
         epochs=opt.epochs,
         batch_size=opt.batch_size,
