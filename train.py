@@ -134,8 +134,8 @@ def train(
             # Run model
             pred = model(imgs)
 
-            optimizer.zero_grad()
-            # Compute loss
+            # optimizer.zero_grad()
+            # Compute loss 
             loss, loss_items = compute_loss(pred, targets, model)
             if torch.isnan(loss):
                 print('WARNING: nan loss detected, ending training')
@@ -143,7 +143,8 @@ def train(
 
             loss.backward()
             optimizer.step()
-            scheduler.step()
+            # scheduler.step()
+            optimizer.zero_grad()
 
             # Update running mean of tracked metrics
             mloss = (mloss * i + loss_items) / (i + 1)
@@ -154,7 +155,7 @@ def train(
                 '%g/%g' % (i, nb - 1), *mloss, nt, time.time() - t)
             t = time.time()
             print(s)
-
+        scheduler.step()
         with torch.no_grad():
             print('\n')
             results = test.test(cfg, names = names, batch_size=batch_size, img_size=img_size, model=model,
